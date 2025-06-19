@@ -771,7 +771,7 @@ _CONFIGS = [
         # Load the pi0 base model checkpoint.
         weight_loader=weight_loaders.CheckpointWeightLoader("s3://openpi-assets/checkpoints/pi0_base/params"),
         num_train_steps=30_000,
-    )
+    ),
     
     #
     # Debugging configs.
