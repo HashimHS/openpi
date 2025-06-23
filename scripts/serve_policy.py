@@ -76,7 +76,7 @@ DEFAULT_CHECKPOINT: dict[EnvMode, Checkpoint] = {
     ),
     EnvMode.UR5E: Checkpoint(
         config="pi0_ur5",
-        dir="s3://openpi-assets/checkpoints/pi0_base",
+        dir="gs://openpi-assets/checkpoints/pi0_base",
     ),
 }
 
