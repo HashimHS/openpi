@@ -20,6 +20,7 @@ import openpi.models.tokenizer as _tokenizer
 import openpi.policies.aloha_policy as aloha_policy
 import openpi.policies.droid_policy as droid_policy
 import openpi.policies.libero_policy as libero_policy
+import openpi.policies.ur5e_policy as ur5e_policy
 import openpi.shared.download as _download
 import openpi.shared.normalize as _normalize
 import openpi.training.droid_rlds_dataset as droid_rlds_dataset
@@ -402,8 +403,8 @@ class LeRobotUR5DataConfig(DataConfigFactory):
 
         # These transforms are the ones we wrote earlier.
         data_transforms = _transforms.Group(
-            inputs=[UR5Inputs(action_dim=model_config.action_dim, model_type=model_config.model_type)],
-            outputs=[UR5Outputs()],
+            inputs=[ur5e_policy.UR5Inputs(action_dim=model_config.action_dim, model_type=model_config.model_type)],
+            outputs=[ur5e_policy.UR5Outputs()],
         )
 
         # Convert absolute actions to delta actions.
