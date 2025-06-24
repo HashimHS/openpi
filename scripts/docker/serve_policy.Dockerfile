@@ -5,10 +5,11 @@
 # docker build . -t openpi_server -f scripts/docker/serve_policy.Dockerfile
 
 # Run the container:
-# docker run --rm -it --network=host -v .:/app --gpus=all openpi_server /bin/bash
+# docker run -d --name openpi_ur5e -it --network=host -v .:/app -v /home/hashim/.cache:/root/.cache --memory=16G --gpus=all openpi_ur5e:latest /bin/bash
+
 FROM nvidia/cuda:12.2.2-cudnn8-runtime-ubuntu22.04@sha256:2d913b09e6be8387e1a10976933642c73c840c0b735f0bf3c28d97fc9bc422e0
 ENV AM_I_DOCKER=True
-ENV BUILD_WITH_CUDA="${USE_CUDA}"
+ENV BUILD_WITH_CUDA=1
 ENV TORCH_CUDA_ARCH_LIST="Maxwell;Maxwell+Tegra;Pascal;Volta;Turing;Ampere;9.0+PTX;12.0+PTX;12.6+PTX"
 ENV CUDA_HOME=/usr/local/cuda
 
@@ -36,5 +37,3 @@ RUN --mount=type=cache,target=/root/.cache/uv \
 GIT_LFS_SKIP_SMUDGE=1 uv sync --frozen --no-install-project --no-dev
 
 ENV NVIDIA_DRIVER_CAPABILITIES=all
-ENV SERVER_ARGS="--env UR5E"
-CMD /bin/bash -c "uv run scripts/serve_policy.py $SERVER_ARGS"
