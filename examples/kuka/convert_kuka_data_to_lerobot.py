@@ -1,7 +1,7 @@
 """
-Script to convert Aloha hdf5 data to the LeRobot dataset v2.0 format.
+Script to convert Kuka hdf5 data to the LeRobot dataset v2.0 format.
 
-Example usage: uv run examples/aloha_real/convert_aloha_data_to_lerobot.py --raw-dir /path/to/raw/data --repo-id <org>/<dataset-name>
+Example usage: uv run examples/kuka/convert_kuka_data_to_lerobot.py --raw-dir /path/to/raw/data --repo-id <org>/<dataset-name>
 """
 
 import dataclasses
@@ -228,7 +228,7 @@ def populate_dataset(
     return dataset
 
 
-def port_aloha(
+def port_kuka(
     raw_dir: Path,
     repo_id: str,
     raw_repo_id: str | None = None,
@@ -252,7 +252,7 @@ def port_aloha(
 
     dataset = create_empty_dataset(
         repo_id,
-        robot_type="mobile_aloha" if is_mobile else "aloha",
+        robot_type="bimanual_kuka",
         mode=mode,
         has_effort=has_effort(hdf5_files),
         has_velocity=has_velocity(hdf5_files),
@@ -271,4 +271,4 @@ def port_aloha(
 
 
 if __name__ == "__main__":
-    tyro.cli(port_aloha)
+    tyro.cli(port_kuka)
