@@ -1,6 +1,6 @@
 #!/bin/bash
 
-policy_name=pi0
+policy_name=pi05
 task_name=${1}
 task_config=${2}
 train_config_name=${3}
