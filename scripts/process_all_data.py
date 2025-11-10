@@ -152,7 +152,7 @@ if __name__ == "__main__":
         for setting in os.listdir(os.path.join("../../data", str(task_name))):
 
             load_dir = os.path.join("../../data", str(task_name), str(setting))
-            expert_data_num = len(os.path.join(os.listdir(load_dir), "data"))
+            expert_data_num = len(os.path.join(load_dir, "data"))
 
             begin = 0
             print(f'read data from path:{os.path.join("data", load_dir)}')
