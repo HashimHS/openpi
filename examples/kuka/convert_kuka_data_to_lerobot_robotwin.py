@@ -1,7 +1,7 @@
 """
-Script to convert Aloha hdf5 data to the LeRobot dataset v2.0 format.
+Script to convert bimanual kuka hdf5 data to the LeRobot dataset v2.0 format.
 
-Example usage: uv run examples/aloha_real/convert_aloha_data_to_lerobot.py --raw-dir /path/to/raw/data --repo-id <org>/<dataset-name>
+Example usage: uv run examples/kuka/convert_kuka_data_to_lerobot.py --raw-dir /path/to/raw/data --repo-id <org>/<dataset-name>
 """
 
 import dataclasses
@@ -226,8 +226,8 @@ def populate_dataset(
             instruction = np.random.choice(instructions)
         for i in range(num_frames):
             frame = {
-                "observation.state": state[i],
-                "action": action[i],
+                "observation.state": state[i].float(),
+                "action": action[i].float(),
                 "task": instruction,
             }
 
@@ -235,16 +235,16 @@ def populate_dataset(
                 frame[f"observation.images.{camera}"] = img_array[i]
 
             if velocity is not None:
-                frame["observation.velocity"] = velocity[i]
+                frame["observation.velocity"] = velocity[i].float()
             if effort is not None:
-                frame["observation.effort"] = effort[i]
+                frame["observation.effort"] = effort[i].float()
             dataset.add_frame(frame)
         dataset.save_episode()
 
     return dataset
 
 
-def port_aloha(
+def port_kuka(
     raw_dir: Path,
     repo_id: str,
     raw_repo_id: str | None = None,
@@ -290,4 +290,4 @@ def port_aloha(
 
 
 if __name__ == "__main__":
-    tyro.cli(port_aloha)
+    tyro.cli(port_kuka)
