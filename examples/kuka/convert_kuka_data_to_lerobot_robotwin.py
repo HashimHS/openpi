@@ -1,7 +1,7 @@
 """
-Script to convert bimanual kuka hdf5 data to the LeRobot dataset v2.0 format.
+Script to convert Kuka hdf5 data to the LeRobot dataset v2.0 format.
 
-Example usage: uv run examples/kuka/convert_kuka_data_to_lerobot.py --raw-dir /path/to/raw/data --repo-id <org>/<dataset-name>
+Example usage: uv run examples/kuka_real/convert_kuka_data_to_lerobot.py --raw-dir /path/to/raw/data --repo-id <org>/<dataset-name>
 """
 
 import dataclasses
@@ -161,8 +161,9 @@ def load_raw_images_per_camera(ep: h5py.File, cameras: list[str]) -> dict[str, n
             imgs_array = []
             for data in ep[f"/observations/images/{camera}"]:
                 data = np.frombuffer(data, np.uint8)
-                # img = cv2.imdecode(nparr, cv2.IMREAD_COLOR)  # 解码为彩色图像
-                imgs_array.append(cv2.imdecode(data, cv2.IMREAD_COLOR))
+                data = cv2.imdecode(data, cv2.IMREAD_COLOR)
+                data = cv2.cvtColor(data, cv2.COLOR_BGR2RGB)
+                imgs_array.append(data)
             imgs_array = np.array(imgs_array)
 
         imgs_per_cam[camera] = imgs_array
@@ -179,16 +180,16 @@ def load_raw_episode_data(
         torch.Tensor | None,
 ]:
     with h5py.File(ep_path, "r") as ep:
-        state = torch.from_numpy(ep["/observations/qpos"][:])
-        action = torch.from_numpy(ep["/action"][:])
+        state = torch.from_numpy(ep["/observations/qpos"][:].astype(np.float32))
+        action = torch.from_numpy(ep["/action"][:].astype(np.float32))
 
         velocity = None
         if "/observations/qvel" in ep:
-            velocity = torch.from_numpy(ep["/observations/qvel"][:])
+            velocity = torch.from_numpy(ep["/observations/qvel"][:].astype(np.float32))
 
         effort = None
         if "/observations/effort" in ep:
-            effort = torch.from_numpy(ep["/observations/effort"][:])
+            effort = torch.from_numpy(ep["/observations/effort"][:].astype(np.float32))
 
         imgs_per_cam = load_raw_images_per_camera(
             ep,
@@ -206,6 +207,7 @@ def populate_dataset(
     dataset: LeRobotDataset,
     hdf5_files: list[Path],
     task: str,
+    subtasks: bool = True,
     episodes: list[int] | None = None,
 ) -> LeRobotDataset:
     if episodes is None:
@@ -218,16 +220,23 @@ def populate_dataset(
         num_frames = state.shape[0]
         # add prompt
         dir_path = os.path.dirname(ep_path)
-        json_Path = f"{dir_path}/instructions.json"
+        json_Path = f"{dir_path}/instructions_frame_number.json" if subtasks else f"{dir_path}/instructions.json"
 
         with open(json_Path, 'r') as f_instr:
             instruction_dict = json.load(f_instr)
             instructions = instruction_dict['instructions']
-            instruction = np.random.choice(instructions)
+            if not subtasks:
+                instruction = np.random.choice(instructions)
+
         for i in range(num_frames):
+
+            if subtasks:
+                instruction = instructions[i]
+                if instruction == 'no instruction':
+                    continue
             frame = {
-                "observation.state": state[i].float(),
-                "action": action[i].float(),
+                "observation.state": state[i],
+                "action": action[i],
                 "task": instruction,
             }
 
@@ -235,9 +244,9 @@ def populate_dataset(
                 frame[f"observation.images.{camera}"] = img_array[i]
 
             if velocity is not None:
-                frame["observation.velocity"] = velocity[i].float()
+                frame["observation.velocity"] = velocity[i]
             if effort is not None:
-                frame["observation.effort"] = effort[i].float()
+                frame["observation.effort"] = effort[i]
             dataset.add_frame(frame)
         dataset.save_episode()
 
@@ -249,6 +258,7 @@ def port_kuka(
     repo_id: str,
     raw_repo_id: str | None = None,
     task: str = "DEBUG",
+    subtasks: bool = True,
     *,
     episodes: list[int] | None = None,
     push_to_hub: bool = False,
@@ -281,6 +291,7 @@ def port_kuka(
         dataset,
         hdf5_files,
         task=task,
+        subtasks=subtasks,
         episodes=episodes,
     )
     # dataset.consolidate()
