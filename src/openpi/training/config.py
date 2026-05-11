@@ -612,7 +612,7 @@ _CONFIGS = [
     # pi05_kuka by full
     TrainConfig(
         name="pi05_kuka_full",
-        model=pi0_config.Pi0Config(pi05=True, action_horizon=10),
+        model=pi0_config.Pi0Config(pi05=True),
         data=LeRobotKukaDataConfig(
             repo_id="pick_obj_repo",  # your datasets repo_id
             adapt_to_pi=False,
@@ -640,7 +640,7 @@ _CONFIGS = [
     # pi05_kuka by lora
     TrainConfig(
         name="pi05_kuka_lora",
-        model=pi0.Pi0Config(pi05=True, action_horizon=10, paligemma_variant="gemma_2b_lora", action_expert_variant="gemma_300m_lora"),
+        model=pi0.Pi0Config(pi05=True, paligemma_variant="gemma_2b_lora", action_expert_variant="gemma_300m_lora"),
         data=LeRobotKukaDataConfig(
             repo_id="pick_obj_repo",  # your datasets repo_id
             adapt_to_pi=False,
@@ -663,6 +663,36 @@ _CONFIGS = [
         ),
         freeze_filter=pi0.Pi0Config(paligemma_variant="gemma_2b_lora",
                                     action_expert_variant="gemma_300m_lora").get_freeze_filter(),
+        batch_size=32,  # the total batch_size not pre_gpu batch_size
+        weight_loader=weight_loaders.CheckpointWeightLoader("gs://openpi-assets/checkpoints/pi05_base/params"),
+        num_train_steps=30000,
+    ),
+    ### finetune config for kuka
+    ###
+    # pi05_kuka by full
+    TrainConfig(
+        name="kuka_base",
+        model=pi0_config.Pi0Config(pi05=True),
+        data=LeRobotKukaDataConfig(
+            repo_id="base_tasks",  # your datasets repo_id
+            adapt_to_pi=False,
+            repack_transforms=_transforms.Group(inputs=[
+                _transforms.RepackTransform({
+                    "images": {
+                        "cam_high": "observation.images.cam_high",
+                        "cam_left_wrist": "observation.images.cam_left_wrist",
+                        "cam_right_wrist": "observation.images.cam_right_wrist",
+                    },
+                    "state": "observation.state",
+                    "actions": "action",
+                    "prompt": "prompt",
+                })
+            ]),
+            base_config=DataConfig(
+                local_files_only=True,  # Set to True for local-only datasets.
+                prompt_from_task=True,  # Set to True for prompt by task_name
+            ),
+        ),
         batch_size=32,  # the total batch_size not pre_gpu batch_size
         weight_loader=weight_loaders.CheckpointWeightLoader("gs://openpi-assets/checkpoints/pi05_base/params"),
         num_train_steps=30000,
