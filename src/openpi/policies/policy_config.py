@@ -65,7 +65,8 @@ def create_trained_policy(
             raise ValueError("Asset id is required to load norm stats.")
         # print(f"!!!!{data_config.asset_id}")
         # print(robotwin_repo_id)
-        data_config.asset_id = robotwin_repo_id
+        # data_config.asset_id = robotwin_repo_id
+        data_config.asset_id = str(checkpoint_dir).split("/")[-2]
         norm_stats = _checkpoints.load_norm_stats(checkpoint_dir / "assets", data_config.asset_id)
 
     return _policy.Policy(
