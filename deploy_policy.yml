@@ -10,4 +10,4 @@ instruction_type: seen
 train_config_name: null
 model_name: null
 checkpoint_id: 29999
-pi0_step: 50
+pi0_step: 10
