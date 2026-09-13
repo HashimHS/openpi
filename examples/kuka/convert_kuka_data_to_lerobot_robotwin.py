@@ -2,6 +2,24 @@
 Script to convert Kuka hdf5 data to the LeRobot dataset v2.0 format.
 
 Example usage: uv run examples/kuka_real/convert_kuka_data_to_lerobot.py --raw-dir /path/to/raw/data --repo-id <org>/<dataset-name>
+
+Subtask (atomic action) labels
+------------------------------
+With `--subtasks` (the default) each frame is labeled with the instruction of the
+atomic action that is being executed at that frame, instead of with the instruction of
+the whole demonstration. The labels are read per episode directory from either
+
+  * `subtasks.json`                  - the key frames of the transitions between the
+                                       atomic actions plus their instructions, produced
+                                       by the RoboTwin pipeline (`envs/_base_task.py` ->
+                                       `subtasks/episode<i>.json` ->
+                                       `description/utils/generate_subtask_instructions.py`
+                                       -> `policy/pi05/scripts/process_data.py`), or
+  * `instructions_frame_number.json` - one instruction per frame, the format of the real
+                                       Kuka recordings.
+
+Add `--split-subtask-episodes` to emit one LeRobot episode per atomic action instead of
+one episode per demonstration.
 """
 
 import dataclasses
@@ -203,11 +221,91 @@ def load_raw_episode_data(
     return imgs_per_cam, state, action, velocity, effort
 
 
+NO_INSTRUCTION = "no instruction"
+
+
+def load_subtask_segments(
+    dir_path: str,
+    num_frames: int,
+    desc_type: str = "seen",
+) -> list[tuple[int, int, str]] | None:
+    """
+    Read the key frames of the atomic actions of an episode from `subtasks.json` and
+    return one `(start_frame, end_frame, instruction)` segment per atomic action.
+    `end_frame` is exclusive. Returns None when the episode has no subtask labels.
+
+    The file is written by `policy/pi05/scripts/process_data.py` from the key frames
+    recorded during the data collection, one instruction phrasing is drawn per segment.
+    """
+    json_path = os.path.join(dir_path, "subtasks.json")
+    if not os.path.exists(json_path):
+        return None
+
+    with open(json_path, "r") as f_instr:
+        subtask_data = json.load(f_instr)
+
+    segments = []
+    for subtask in subtask_data.get("subtasks", []):
+        start_frame = max(0, int(subtask["start_frame"]))
+        end_frame = min(num_frames, int(subtask["end_frame"]))
+        if end_frame <= start_frame:
+            continue
+        instructions = subtask.get(desc_type) or subtask.get("seen") or []
+        if not instructions:
+            print(f"WARNING: {json_path}: subtask {subtask.get('index')} "
+                  f"({subtask.get('action')}) has no instruction, its frames are dropped")
+            continue
+        segments.append((start_frame, end_frame, str(np.random.choice(instructions))))
+
+    return segments
+
+
+def load_frame_instruction_segments(dir_path: str, num_frames: int) -> list[tuple[int, int, str]]:
+    """
+    Fall back for data that stores one instruction per frame in
+    `instructions_frame_number.json` (the format of the real Kuka recordings).
+    Consecutive frames sharing an instruction are grouped into a single segment.
+    """
+    with open(os.path.join(dir_path, "instructions_frame_number.json"), "r") as f_instr:
+        instructions = json.load(f_instr)["instructions"]
+
+    segments = []
+    for i in range(min(num_frames, len(instructions))):
+        instruction = instructions[i]
+        if instruction == NO_INSTRUCTION:
+            continue
+        if segments and segments[-1][2] == instruction and segments[-1][1] == i:
+            segments[-1] = (segments[-1][0], i + 1, instruction)
+        else:
+            segments.append((i, i + 1, instruction))
+    return segments
+
+
+def get_episode_segments(
+    dir_path: str,
+    num_frames: int,
+    subtasks: bool,
+    desc_type: str = "seen",
+) -> list[tuple[int, int, str]]:
+    """Frame ranges of an episode together with the instruction to train them with."""
+    if not subtasks:
+        with open(os.path.join(dir_path, "instructions.json"), "r") as f_instr:
+            instructions = json.load(f_instr)["instructions"]
+        return [(0, num_frames, str(np.random.choice(instructions)))]
+
+    segments = load_subtask_segments(dir_path, num_frames, desc_type=desc_type)
+    if segments is None:
+        segments = load_frame_instruction_segments(dir_path, num_frames)
+    return segments
+
+
 def populate_dataset(
     dataset: LeRobotDataset,
     hdf5_files: list[Path],
     task: str,
     subtasks: bool = True,
+    split_subtask_episodes: bool = False,
+    desc_type: str = "seen",
     episodes: list[int] | None = None,
 ) -> LeRobotDataset:
     if episodes is None:
@@ -220,35 +318,42 @@ def populate_dataset(
         num_frames = state.shape[0]
         # add prompt
         dir_path = os.path.dirname(ep_path)
-        json_Path = f"{dir_path}/instructions_frame_number.json" if subtasks else f"{dir_path}/instructions.json"
+        segments = get_episode_segments(dir_path, num_frames, subtasks, desc_type=desc_type)
 
-        with open(json_Path, 'r') as f_instr:
-            instruction_dict = json.load(f_instr)
-            instructions = instruction_dict['instructions']
-            if not subtasks:
-                instruction = np.random.choice(instructions)
+        if not segments:
+            print(f"WARNING: {ep_path} has no labeled frame, skipping it")
+            continue
 
-        for i in range(num_frames):
+        def add_frames(start_frame: int, end_frame: int, instruction: str):
+            for i in range(start_frame, end_frame):
+                frame = {
+                    "observation.state": state[i],
+                    "action": action[i],
+                    "task": instruction,
+                }
 
-            if subtasks:
-                instruction = instructions[i]
-                if instruction == 'no instruction':
-                    continue
-            frame = {
-                "observation.state": state[i],
-                "action": action[i],
-                "task": instruction,
-            }
+                for camera, img_array in imgs_per_cam.items():
+                    frame[f"observation.images.{camera}"] = img_array[i]
 
-            for camera, img_array in imgs_per_cam.items():
-                frame[f"observation.images.{camera}"] = img_array[i]
+                if velocity is not None:
+                    frame["observation.velocity"] = velocity[i]
+                if effort is not None:
+                    frame["observation.effort"] = effort[i]
+                dataset.add_frame(frame)
 
-            if velocity is not None:
-                frame["observation.velocity"] = velocity[i]
-            if effort is not None:
-                frame["observation.effort"] = effort[i]
-            dataset.add_frame(frame)
-        dataset.save_episode()
+        if split_subtask_episodes:
+            # One LeRobot episode per atomic action, so that action chunks never
+            # cross the transition from one subtask to the next.
+            for start_frame, end_frame, instruction in segments:
+                add_frames(start_frame, end_frame, instruction)
+                dataset.save_episode()
+        else:
+            # One LeRobot episode per demonstration, every frame labeled with the
+            # instruction of the atomic action it belongs to. Unlabeled frames are
+            # dropped.
+            for start_frame, end_frame, instruction in segments:
+                add_frames(start_frame, end_frame, instruction)
+            dataset.save_episode()
 
     return dataset
 
@@ -258,7 +363,9 @@ def port_kuka(
     repo_id: str,
     raw_repo_id: str | None = None,
     task: str = "DEBUG",
-    subtasks: bool = True,
+    subtasks: bool = False,
+    split_subtask_episodes: bool = False,
+    desc_type: str = "seen",
     *,
     episodes: list[int] | None = None,
     push_to_hub: bool = False,
@@ -292,6 +399,8 @@ def port_kuka(
         hdf5_files,
         task=task,
         subtasks=subtasks,
+        split_subtask_episodes=split_subtask_episodes,
+        desc_type=desc_type,
         episodes=episodes,
     )
     # dataset.consolidate()
@@ -301,4 +410,4 @@ def port_kuka(
 
 
 if __name__ == "__main__":
-    tyro.cli(port_kuka)
+    tyro.cli(port_kuka) # To recognize you need to add the arguments, you can run `python convert_kuka_data_to_lerobot_robotwin.py --help`
